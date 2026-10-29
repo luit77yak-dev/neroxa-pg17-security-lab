@@ -85,7 +85,7 @@ jobs:
           def allowlisted_environment(source):
               allowed = {
                   "PATH", "LC_ALL", "BASH_ENV", "ENV", "PREFLIGHT_DIR",
-                  "GH_REPOSITORY", "GH_REF", "GH_EVENT", "GH_RUN_ATTEMPT",
+                  "GH_REPOSITORY", "GH_REF", "GH_EVENT", "GH_RUN_ID", "GH_RUN_ATTEMPT",
                   "RUNNER_OS_VALUE", "RUNNER_ARCH_VALUE", "RUNNER_ENVIRONMENT_VALUE",
                   "RUNNER_TEMP_VALUE", "IMAGE_OS_VALUE", "IMAGE_VERSION_VALUE",
                   "PREFLIGHT_SENSITIVE_NAME_PRESENT",
