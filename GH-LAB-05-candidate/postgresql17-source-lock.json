@@ -1,0 +1,11 @@
+{
+  "product": "PostgreSQL",
+  "major": 17,
+  "minor": "17.11",
+  "source": "official PostgreSQL source archive",
+  "url": "https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2",
+  "integrity_url": "https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2.sha256",
+  "sha256": "dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979",
+  "verification": "sha256sum --check against the pinned digest before extraction",
+  "execution_in_this_mission": false
+}

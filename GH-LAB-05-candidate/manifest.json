@@ -1,0 +1,60 @@
+{
+  "mission": "GH-LAB-06",
+  "candidate": "GH-LAB-05 plus approved Delta 01",
+  "candidate_status": "static, inactive, published-documentary",
+  "repository": "luit77yak-dev/neroxa-pg17-security-lab",
+  "branch": "main",
+  "base_main_sha": "9960eae76d1a58f3f96746e5fb6e3d72ad280d2f",
+  "source_artifacts": [
+    {
+      "name": "NEROXA-GH-LAB-05-candidate.zip",
+      "sha256": "abef1fae327275aeacaf0b8818642110072049df88b1d002e5f113206a70bffe"
+    },
+    {
+      "name": "NEROXA-GH-LAB-05-DELTA-01.zip",
+      "sha256": "c3f33a8698b195ba4c2ed6fad91048172c7d38ac6356c832bbf2cbe8369ed807"
+    }
+  ],
+  "composition": "The candidate preimage was extracted, generated Python bytecode was excluded, and only the three approved Delta 01 postimages were overlaid. The workflow remains outside .github/workflows.",
+  "administrative_preflight": {
+    "main_head_observed_before_publication": "9960eae76d1a58f3f96746e5fb6e3d72ad280d2f",
+    "github_actions": "disabled",
+    "evidence": "Repository Settings > Actions showed Disable actions selected; API reported zero workflow runs before publication.",
+    "observed_at_utc": "2026-10-29"
+  },
+  "workflow_candidate_path": "workflow.preflight.candidate.yml",
+  "active_workflow_path": null,
+  "inventory": [
+    {
+      "path": "README.md",
+      "size_bytes": 11504,
+      "sha256": "4b63eb8a47f2569f6ab23bef0fc4ae7ee88184f537aaf85e8f156a973aa919fe"
+    },
+    {
+      "path": "STATIC-RESULTS.json",
+      "size_bytes": 1226,
+      "sha256": "6c469e1d82dcc6a1ed12f4de12c45bc193ef9904b9f5b97b4d7e3de06fd44379"
+    },
+    {
+      "path": "postgresql17-source-lock.json",
+      "size_bytes": 497,
+      "sha256": "bf269c0040b30b089ef2b68b75b5f3b0e2d58bff358f5dee31869a9a6b177b9a"
+    },
+    {
+      "path": "tests/test_static_candidate.py",
+      "size_bytes": 5514,
+      "sha256": "2ac5647454ef7c0122bcbfdcd59be8551c5cb774b5af8642c7863e0315d30fc9"
+    },
+    {
+      "path": "workflow.preflight.candidate.yml",
+      "size_bytes": 19560,
+      "sha256": "99d32a9408a3e4ab695642dd4af6c58f01528f9ef1eceddd803874f9d18cc7d0"
+    }
+  ],
+  "integrity_notes": {
+    "manifest_self_hash": "excluded",
+    "SHA256SUMS": "covers manifest.json and all inventory files; does not hash itself",
+    "generated_bytecode": "excluded as non-source build residue"
+  },
+  "execution": "No workflow, runner, PostgreSQL, Docker, SQL, or external service executed."
+}

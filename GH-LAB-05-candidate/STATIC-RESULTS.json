@@ -1,0 +1,37 @@
+{
+  "mission": "GH-LAB-05",
+  "prepared_at_utc": "2026-10-29T02:42:24+00:00",
+  "scope": "static candidate and synthetic local validation only",
+  "synthetic_tests": {
+    "count": 6,
+    "passed": 6,
+    "failed": 0,
+    "result": "PASS"
+  },
+  "static_validation": {
+    "workflow_yaml": "PASS",
+    "embedded_bash_blocks": "PASS (bash -n; 2 blocks)",
+    "embedded_python": "PASS (AST parse)",
+    "source_lock_json": "PASS",
+    "archive_integrity": "PASS"
+  },
+  "runtime_not_performed": {
+    "workflow_published": false,
+    "github_actions_reenabled": false,
+    "workflow_started": false,
+    "runner_resources_measured": false,
+    "network_namespace_probe_run": false,
+    "postgresql_installed_or_started": false,
+    "docker_used": false,
+    "sql_executed": false,
+    "cleanup_executed": false
+  },
+  "unresolved_gates": [
+    "repository visibility and remaining included Actions minutes/billing guard",
+    "actual hosted VM CPU/memory/disk",
+    "runtime network namespace and sudo/unshare capability",
+    "post-PostgreSQL-initialization free disk >= 3 GiB",
+    "cleanup under platform cancellation/VM loss"
+  ],
+  "operational_disposition": "BLOCKED_PENDING_SEPARATE_AUTHORIZATION_AND_DYNAMIC_EVIDENCE"
+}
