@@ -253,14 +253,36 @@ jobs:
                              "/usr/bin/setpriv", "--reuid=65534", "--regid=65534", "--clear-groups",
                              "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all", "--no-new-privs",
                              "/usr/bin/python3", "-c", "import json;\n" + probe, str(socket_dir), str(host_net_inode)]
+                  def classify_probe_stderr(stderr_text):
+                      # Match only known diagnostic signatures; never emit raw stderr.
+                      diagnostic = stderr_text.lower()
+                      denied = ("operation not permitted", "permission denied", "not permitted", "eperm")
+                      if "sudo:" in diagnostic:
+                          return "SUDO_INVOCATION_FAILURE"
+                      if "unshare:" in diagnostic:
+                          return "NAMESPACE_PERMISSION_DENIED" if any(token in diagnostic for token in denied) else "UNSHARE_INVOCATION_FAILURE"
+                      if "setpriv:" in diagnostic:
+                          return "SETPRIV_PERMISSION_DENIED" if any(token in diagnostic for token in denied) else "SETPRIV_INVOCATION_FAILURE"
+                      if "traceback (most recent call last)" in diagnostic or any(token in diagnostic for token in ("syntaxerror", "nameerror", "importerror", "modulenotfounderror")):
+                          return "PROBE_INTERNAL_FAILURE"
+                      if any(token in diagnostic for token in denied):
+                          return "PRIVILEGE_RESTRICTION_UNATTRIBUTED"
+                      return "CHILD_FAILURE_UNCLASSIFIED"
+
                   try:
-                      child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                      child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                                start_new_session=True, close_fds=True)
+                  except OSError as exc:
+                      print(f"PROBE_DIAGNOSTIC=PROCESS_LAUNCH_OSERROR; type={type(exc).__name__}")
+                      record("network_isolation_probe", False, "process launch failed; details redacted", blocked=True)
+                  else:
+                      timed_out = False
                       try:
-                          output, _ = child.communicate(timeout=90)
+                          output, diagnostic_stderr = child.communicate(timeout=90)
                       except subprocess.TimeoutExpired:
                           os.killpg(child.pid, signal.SIGKILL)
-                          output, _ = child.communicate()
+                          output, diagnostic_stderr = child.communicate()
+                          timed_out = True
                           record("network_probe_timeout", False, "process group terminated; details redacted")
                       result_returncode = child.returncode
                       # Only fixed status tokens from the child are forwarded.
@@ -268,10 +290,17 @@ jobs:
                       child_tokens = set(output.splitlines()) & safe_lines
                       for token in sorted(child_tokens):
                           print(token)
-                      if result_returncode == 0:
+                      if timed_out:
+                          print(f"PROBE_DIAGNOSTIC=PROCESS_TIMEOUT; exit={result_returncode}")
+                          record("network_namespace_no_routes", False, "probe timed out", blocked=True)
+                          record("nonprivileged_process", False, "probe timed out", blocked=True)
+                          record("private_unix_socket", False, "probe timed out", blocked=True)
+                      elif result_returncode == 0:
                           record("network_namespace_no_routes", "NETWORK_NAMESPACE=PASS" in child_tokens)
                           record("nonprivileged_process", "LOW_PRIVILEGE_IDENTITY=PASS" in child_tokens)
                           record("private_unix_socket", "PRIVATE_UNIX_SOCKET=PASS" in child_tokens)
+                          if len(child_tokens) != 3:
+                              print("PROBE_DIAGNOSTIC=EXPECTED_STATUS_MISSING; exit=0")
                       elif result_returncode in (33, 34, 35, 36):
                           record("network_namespace_no_routes", False, "measured namespace/interface/route violation")
                           record("nonprivileged_process", True, "UID and capability checks passed")
@@ -289,11 +318,10 @@ jobs:
                           record("nonprivileged_process", False, "capability or no_new_privs violation")
                           record("private_unix_socket", False, "probe not completed", blocked=True)
                       else:
-                          record("network_namespace_no_routes", False, "namespace probe unavailable", blocked=True)
-                          record("nonprivileged_process", False, "namespace probe unavailable", blocked=True)
-                          record("private_unix_socket", False, "socket probe unavailable", blocked=True)
-                  except (OSError, subprocess.TimeoutExpired):
-                      record("network_isolation_probe", False, "timeout or tool error; details redacted", blocked=True)
+                          print(f"PROBE_DIAGNOSTIC={classify_probe_stderr(diagnostic_stderr)}; exit={result_returncode}")
+                          record("network_namespace_no_routes", False, "namespace probe failed; detail class recorded", blocked=True)
+                          record("nonprivileged_process", False, "namespace probe failed; detail class recorded", blocked=True)
+                          record("private_unix_socket", False, "socket probe not completed", blocked=True)
               else:
                   record("network_namespace_no_routes", False, "missing prerequisite", blocked=True)
                   record("nonprivileged_process", False, "missing prerequisite", blocked=True)
