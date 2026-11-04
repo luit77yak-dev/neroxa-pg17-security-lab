@@ -49,6 +49,18 @@ jobs:
           ref: '0e98cda5dce5e84f7019e6d97d69b1aa1ee6f023'
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: 'luit77yak-dev/neroxa-pg17-security-lab'
+          ref: ${{ github.sha }}
+          path: lab-gate
+          persist-credentials: false
+      - name: Validate restricted broker source before any installation
+        run: |
+          set -euo pipefail
+          python3 -m py_compile lab-gate/tools/f01_docker_broker.py
+          test "$(git -C lab-gate rev-parse HEAD)" = "$GITHUB_SHA"
+          echo 'F01_DOCKER_BROKER_STATIC=PASS; source pinned to lab SHA'
       - name: Founder approval, exact SHAs and consumed-run gate (before services)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -129,8 +141,43 @@ jobs:
       - name: Real Auth and buyer recut with test UID egress restriction
         run: |
           set -euo pipefail
-          sudo useradd --create-home --groups docker neroxa_test
+          sudo useradd --create-home neroxa_test
+          if id -nG neroxa_test | tr ' ' '\n' | grep -qx docker; then echo 'F01_TEST_DOCKER_GROUP=FAIL'; exit 1; fi
+          echo 'F01_TEST_DOCKER_GROUP=ABSENT'
           sudo chown -R neroxa_test:neroxa_test "$AB_WORKDIR"
+          # The Supabase CLI's broad Docker relay is owned by the runner, NEVER the test UID.
+          sudo chown "$(id -u):$(id -g)" "$AB_WORKDIR/docker-loopback.sock"
+          sudo chmod 600 "$AB_WORKDIR/docker-loopback.sock"
+          sudo -u neroxa_test env AB_WORKDIR="$AB_WORKDIR" python3 - <<'PY'
+          import os,socket
+          for name in ('/var/run/docker.sock',os.environ['AB_WORKDIR']+'/docker-loopback.sock'):
+              s=socket.socket(socket.AF_UNIX)
+              try:
+                  s.connect(name)
+              except PermissionError:
+                  pass
+              else:
+                  raise SystemExit('F01_DOCKER_SOCKET_ISOLATION=FAIL')
+              finally:
+                  s.close()
+          print('F01_DOCKER_SOCKET_ISOLATION=PASS')
+          PY
+          BROKER_DIR="$RUNNER_TEMP/f01-broker-$GITHUB_RUN_ID"
+          echo "BROKER_DIR=$BROKER_DIR" >> "$GITHUB_ENV"
+          mkdir -m 711 "$BROKER_DIR"
+          cat > "$BROKER_DIR/docker" <<EOF
+          #!/bin/sh
+          exec /usr/bin/python3 "$GITHUB_WORKSPACE/lab-gate/tools/f01_docker_broker.py" client --socket "\$F01_BROKER_SOCKET" "\$@"
+          EOF
+          chmod 755 "$BROKER_DIR/docker"
+          python3 lab-gate/tools/f01_docker_broker.py serve --socket "$BROKER_DIR/broker.sock" --project "$AB_PROJECT" --test-uid "$(id -u neroxa_test)" > "$BROKER_DIR/broker.log" 2>&1 &
+          echo $! > "$BROKER_DIR/broker.pid"
+          for attempt in $(seq 1 30); do test -S "$BROKER_DIR/broker.sock" && break; sleep 1; done
+          test -S "$BROKER_DIR/broker.sock"
+          sudo chgrp neroxa_test "$BROKER_DIR/broker.sock"
+          sudo chmod 660 "$BROKER_DIR/broker.sock"
+          sudo -u neroxa_test env -i PATH="$BROKER_DIR:$PATH" F01_BROKER_SOCKET="$BROKER_DIR/broker.sock" "$BROKER_DIR/docker" ps --format '{{json .}}' > /dev/null
+          echo 'F01_RESTRICTED_DOCKER_BROKER=PASS'
           # Dedicated UID needs traversal/read of the audited workspace, not runner secrets.
           ancestor="$GITHUB_WORKSPACE"
           while [ "$ancestor" != / ]; do
@@ -142,12 +189,14 @@ jobs:
           echo 'TEST_UID_WORKSPACE_READ=PASS'
           bash tools/mission-02a5/network.sh lock
           trap 'bash tools/mission-02a5/network.sh unlock' EXIT
-          sudo -u neroxa_test env -i PATH="$PATH" HOME=/home/neroxa_test AB_WORKDIR="$AB_WORKDIR" AB_PROJECT="$AB_PROJECT" MISSION_PROFILE=master MISSION_FOCUS=f01-prova1 MISSION_ACTORS=all MISSION02A4_SQL="$MISSION02A4_SQL" MISSION02A4_AVAILABILITY=false MISSION_F01_FOCUS=proof1-focal MISSION02A4_STORAGE=false MISSION_MUTATION_PROBE=false AB_NETWORK="$AB_NETWORK" MISSION_SOURCE_SHA="$MASTER_SHA" MISSION_RUN_ID="$GITHUB_RUN_ID" DOCKER_HOST=unix:///var/run/docker.sock node --experimental-strip-types tools/mission-02a3/f01-generated.private.mjs | tee "$RUNNER_TEMP/f01-prova1.log"
+          sudo -u neroxa_test env -i PATH="$BROKER_DIR:$PATH" F01_BROKER_SOCKET="$BROKER_DIR/broker.sock" HOME=/home/neroxa_test AB_WORKDIR="$AB_WORKDIR" AB_PROJECT="$AB_PROJECT" MISSION_PROFILE=master MISSION_FOCUS=f01-prova1 MISSION_ACTORS=all MISSION02A4_SQL="$MISSION02A4_SQL" MISSION02A4_AVAILABILITY=false MISSION_F01_FOCUS=proof1-focal MISSION02A4_STORAGE=false MISSION_MUTATION_PROBE=false AB_NETWORK="$AB_NETWORK" MISSION_SOURCE_SHA="$MASTER_SHA" MISSION_RUN_ID="$GITHUB_RUN_ID" DOCKER_HOST=unix:///var/run/docker.sock node --experimental-strip-types tools/mission-02a3/f01-generated.private.mjs | tee "$RUNNER_TEMP/f01-prova1.log"
       - name: Verify six F01 Prova 1 receipts (fail closed)
         run: python3 tools/f01/proof1_result.py "$RUNNER_TEMP/f01-prova1.log"
       - name: Cleanup only this disposable project
         if: always()
         run: |
+          set -uo pipefail
+          cleanup_failed=0
           bash tools/mission-02a5/network.sh unlock
           if [ -n "${AB_WORKDIR:-}" ] && sudo test -d "$AB_WORKDIR"; then
             sudo chown -R "$(id -u):$(id -g)" "$AB_WORKDIR"
@@ -160,4 +209,9 @@ jobs:
           docker --host=unix:///var/run/docker.sock network rm "$AB_NETWORK" || true
           remaining=$(docker --host=unix:///var/run/docker.sock ps -aq --filter label=com.supabase.cli.project=$AB_PROJECT)
           test -z "$remaining"
+          if [ -n "${BROKER_DIR:-}" ] && [ "$BROKER_DIR" = "$RUNNER_TEMP/f01-broker-$GITHUB_RUN_ID" ] && [ -d "$BROKER_DIR" ]; then
+            if [ -f "$BROKER_DIR/broker.pid" ]; then kill "$(cat "$BROKER_DIR/broker.pid")" 2>/dev/null || true; fi
+            rm -rf -- "$BROKER_DIR" || cleanup_failed=1
+          fi
+          test "$cleanup_failed" -eq 0
           echo 'CLEANUP=PASS; no project containers; no dumps or credentials uploaded'
