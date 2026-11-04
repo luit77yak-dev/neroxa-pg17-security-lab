@@ -195,6 +195,30 @@ jobs:
           echo 'F01_RESTRICTED_DOCKER_BROKER=PASS'
           bash tools/mission-02a5/network.sh lock
           trap 'bash tools/mission-02a5/network.sh unlock' EXIT
+          uid="$(id -u neroxa_test)"
+          nid="$(docker --host=unix:///var/run/docker.sock network inspect "$AB_NETWORK" --format '{{.Id}}')"
+          bridge="br-${nid:0:12}"
+          sudo iptables -C OUTPUT -m owner --uid-owner "$uid" -j NEROXA02A5
+          sudo iptables -C NEROXA02A5 -j REJECT
+          sudo ip6tables -C OUTPUT -m owner --uid-owner "$uid" -j NEROXA02A5
+          sudo ip6tables -C NEROXA02A5 -j REJECT
+          sudo iptables -C DOCKER-USER -i "$bridge" ! -o "$bridge" -j REJECT
+          before="$(sudo iptables -L NEROXA02A5 -v -x -n | awk '$3=="REJECT" {print $1}')"
+          [[ "$before" =~ ^[0-9]+$ ]]
+          sudo -u neroxa_test env -i python3 - <<'PY'
+          import socket
+          s=socket.socket()
+          s.settimeout(2)
+          try:
+              result=s.connect_ex(('198.51.100.1',443))
+              assert result != 0, 'F01_EGRESS_PROBE_UNEXPECTED_CONNECTION'
+          finally:
+              s.close()
+          PY
+          after="$(sudo iptables -L NEROXA02A5 -v -x -n | awk '$3=="REJECT" {print $1}')"
+          [[ "$after" =~ ^[0-9]+$ ]]
+          test "$after" -gt "$before"
+          echo 'F01_EGRESS_FIREWALL_COUNTER=PASS; packet reached reject rule'
           sudo -u neroxa_test env -i PATH="$BROKER_DIR:$PATH" F01_BROKER_SOCKET="$BROKER_DIR/broker.sock" HOME=/home/neroxa_test AB_WORKDIR="$AB_WORKDIR" AB_PROJECT="$AB_PROJECT" MISSION_PROFILE=master MISSION_FOCUS=f01-prova1 MISSION_ACTORS=all MISSION02A4_SQL="$MISSION02A4_SQL" MISSION02A4_AVAILABILITY=false MISSION_F01_FOCUS=proof1-focal MISSION02A4_STORAGE=false MISSION_MUTATION_PROBE=false AB_NETWORK="$AB_NETWORK" MISSION_SOURCE_SHA="$MASTER_SHA" MISSION_RUN_ID="$GITHUB_RUN_ID" DOCKER_HOST=unix:///var/run/docker.sock node --experimental-strip-types tools/mission-02a3/f01-generated.private.mjs | tee "$RUNNER_TEMP/f01-prova1.log"
       - name: Verify six F01 Prova 1 receipts (fail closed)
         run: python3 tools/f01/proof1_result.py "$RUNNER_TEMP/f01-prova1.log"
