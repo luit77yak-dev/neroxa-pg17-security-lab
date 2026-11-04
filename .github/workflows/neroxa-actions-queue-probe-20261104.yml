@@ -1,0 +1,23 @@
+name: NEROXA Actions queue diagnostic (push only, no services)
+on:
+  push:
+    branches:
+      - diag/actions-push-queue-20261104
+permissions:
+  contents: read
+concurrency:
+  group: neroxa-actions-push-queue-diag-20261104
+  cancel-in-progress: false
+jobs:
+  queue-scheduling-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Confirm a push-created GitHub Actions job was scheduled
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REF" = refs/heads/diag/actions-push-queue-20261104
+          echo 'NEROXA_ACTIONS_PUSH_SCHEDULING=PASS'
+          echo 'No checkout, no Docker, no SQL, no services, no secrets and no deployment.'
