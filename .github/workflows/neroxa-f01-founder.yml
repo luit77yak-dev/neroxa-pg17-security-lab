@@ -59,6 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile lab-gate/tools/f01_docker_broker.py
+          python3 -m unittest discover -s lab-gate/tools -p 'test_f01_docker_broker.py' -v
           test "$(git -C lab-gate rev-parse HEAD)" = "$GITHUB_SHA"
           echo 'F01_DOCKER_BROKER_STATIC=PASS; source pinned to lab SHA'
       - name: Founder approval, exact SHAs and consumed-run gate (before services)
