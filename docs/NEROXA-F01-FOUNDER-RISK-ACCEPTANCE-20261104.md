@@ -35,3 +35,17 @@
 4. Aprovação **expressa para uma tentativa**, informando SHA do LAB e SHA do Master; não usar aprovação genérica `ok`.
 
 **Estados atuais:** `LAB_LAUNCHER = DRAFT`, `NATIVE_EXECUTION = NOT_APPROVED`, `F01 = NO_GO`, `F02 = NO_GO`, `SEC18 = BLOCKED`, `COMMERCIAL = NO_GO`. Nenhum merge ou workflow nativo por esta preparação.
+
+## Atualização técnica — 04/11/2026 (PR #2 ainda DRAFT)
+A antiga chamada de testes recebia acesso ao grupo Docker e, por chown recursivo, ao relay Unix do CLI Supabase. Ambos poderiam contornar as restrições `iptables` por UID. A **candidata estática** agora:
+- Cria `neroxa_test` sem o grupo Docker; exige teste negativo de conexão aos sockets `/var/run/docker.sock` e `docker-loopback.sock`.
+- Mantém o relay Docker do CLI com propriedade do runner e modo `0600`, fora do alcance direto do usuário de testes.
+- Adiciona `tools/f01_docker_broker.py`, intermediário com UID verificado via `SO_PEERCRED`, acesso exclusivamente a `docker ps` restrito ao projeto, `docker inspect` restrito e `docker exec -i <DB descartável> psql ...`. Rejeita run/create/cp/shell e contêineres fora da identidade do projeto.
+- Exige cinco testes sintéticos do broker e verificação de sintaxe antes de instalar dependências.
+- Verifica a presença de regras IPv4/IPv6 e a variação positiva do contador `REJECT` após uma tentativa IPv4 negativa; um endereço TEST-NET inacessível, sozinho, **não** é prova de firewall.
+- Limpeza falha fechada para broker, relay, rede, contêineres e diretórios privados.
+- Preserva `workflow_dispatch`, aprovação nominal do fundador, SHA exato, tentativa única e repositório separado da Vercel.
+
+**Limitação ainda não resolvida por execução:** nenhum desses controles foi observado em GitHub Actions após os patches. `NATIVE_NETWORK_ISOLATION = NOT_VERIFIED`; nenhum `PASS` nativo de F01/F02, nenhuma habilitação de production/commerce. A execução deve parar se o socket não for negado, se o contador não aumentar ou se o broker não funcionar. O PostgreSQL descartável contém superusuário SQL para fixtures, e um banco superusuário não equivale a um sandbox host robusto: risco residual deve ser explicitamente aceito no escopo sintético.
+
+**Decisão:** revisão estática e códigos publicados somente na branch da PR; sem merge para `main`, sem execução GitHub Actions nativa, sem dados reais e sem segredo de produção.
