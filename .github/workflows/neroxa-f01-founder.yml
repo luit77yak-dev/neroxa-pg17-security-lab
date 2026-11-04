@@ -166,6 +166,11 @@ jobs:
           BROKER_DIR="$RUNNER_TEMP/f01-broker-$GITHUB_RUN_ID"
           echo "BROKER_DIR=$BROKER_DIR" >> "$GITHUB_ENV"
           mkdir -m 711 "$BROKER_DIR"
+          ancestor="$BROKER_DIR"
+          while [ "$ancestor" != / ]; do
+            sudo setfacl -m u:neroxa_test:--x "$ancestor"
+            ancestor=$(dirname "$ancestor")
+          done
           cat > "$BROKER_DIR/docker" <<EOF
           #!/bin/sh
           exec /usr/bin/python3 "$GITHUB_WORKSPACE/lab-gate/tools/f01_docker_broker.py" client --socket "\$F01_BROKER_SOCKET" "\$@"
