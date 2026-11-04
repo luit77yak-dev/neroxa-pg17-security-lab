@@ -182,8 +182,6 @@ jobs:
           test -S "$BROKER_DIR/broker.sock"
           sudo chgrp neroxa_test "$BROKER_DIR/broker.sock"
           sudo chmod 660 "$BROKER_DIR/broker.sock"
-          sudo -u neroxa_test env -i PATH="$BROKER_DIR:$PATH" F01_BROKER_SOCKET="$BROKER_DIR/broker.sock" "$BROKER_DIR/docker" ps --format '{{json .}}' > /dev/null
-          echo 'F01_RESTRICTED_DOCKER_BROKER=PASS'
           # Dedicated UID needs traversal/read of the audited workspace, not runner secrets.
           ancestor="$GITHUB_WORKSPACE"
           while [ "$ancestor" != / ]; do
@@ -193,6 +191,8 @@ jobs:
           sudo setfacl -R -m u:neroxa_test:rX "$GITHUB_WORKSPACE"
           sudo -u neroxa_test test -r tools/mission-02a3/f01-generated.private.mjs
           echo 'TEST_UID_WORKSPACE_READ=PASS'
+          sudo -u neroxa_test env -i PATH="$BROKER_DIR:$PATH" F01_BROKER_SOCKET="$BROKER_DIR/broker.sock" "$BROKER_DIR/docker" ps --format '{{json .}}' > /dev/null
+          echo 'F01_RESTRICTED_DOCKER_BROKER=PASS'
           bash tools/mission-02a5/network.sh lock
           trap 'bash tools/mission-02a5/network.sh unlock' EXIT
           sudo -u neroxa_test env -i PATH="$BROKER_DIR:$PATH" F01_BROKER_SOCKET="$BROKER_DIR/broker.sock" HOME=/home/neroxa_test AB_WORKDIR="$AB_WORKDIR" AB_PROJECT="$AB_PROJECT" MISSION_PROFILE=master MISSION_FOCUS=f01-prova1 MISSION_ACTORS=all MISSION02A4_SQL="$MISSION02A4_SQL" MISSION02A4_AVAILABILITY=false MISSION_F01_FOCUS=proof1-focal MISSION02A4_STORAGE=false MISSION_MUTATION_PROBE=false AB_NETWORK="$AB_NETWORK" MISSION_SOURCE_SHA="$MASTER_SHA" MISSION_RUN_ID="$GITHUB_RUN_ID" DOCKER_HOST=unix:///var/run/docker.sock node --experimental-strip-types tools/mission-02a3/f01-generated.private.mjs | tee "$RUNNER_TEMP/f01-prova1.log"
