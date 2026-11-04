@@ -197,21 +197,38 @@ jobs:
         run: |
           set -uo pipefail
           cleanup_failed=0
-          bash tools/mission-02a5/network.sh unlock
+          if ! bash tools/mission-02a5/network.sh unlock; then echo 'CLEANUP_ERROR=egress unlock'; cleanup_failed=1; fi
           if [ -n "${AB_WORKDIR:-}" ] && sudo test -d "$AB_WORKDIR"; then
-            sudo chown -R "$(id -u):$(id -g)" "$AB_WORKDIR"
+            sudo chown -R "$(id -u):$(id -g)" "$AB_WORKDIR" || { echo 'CLEANUP_ERROR=workdir ownership'; cleanup_failed=1; }
           fi
           export DOCKER_HOST=unix:///var/run/docker.sock
           if [ -n "${AB_WORKDIR:-}" ] && [ -f "$AB_WORKDIR/supabase/config.toml" ]; then
-            supabase stop --workdir "$AB_WORKDIR" --no-backup
-            if [ -f "$AB_WORKDIR/relay.pid" ]; then kill "$(cat "$AB_WORKDIR/relay.pid")" || true; fi
+            supabase stop --workdir "$AB_WORKDIR" --no-backup || { echo 'CLEANUP_ERROR=supabase stop'; cleanup_failed=1; }
           fi
-          docker --host=unix:///var/run/docker.sock network rm "$AB_NETWORK" || true
-          remaining=$(docker --host=unix:///var/run/docker.sock ps -aq --filter label=com.supabase.cli.project=$AB_PROJECT)
-          test -z "$remaining"
-          if [ -n "${BROKER_DIR:-}" ] && [ "$BROKER_DIR" = "$RUNNER_TEMP/f01-broker-$GITHUB_RUN_ID" ] && [ -d "$BROKER_DIR" ]; then
-            if [ -f "$BROKER_DIR/broker.pid" ]; then kill "$(cat "$BROKER_DIR/broker.pid")" 2>/dev/null || true; fi
-            rm -rf -- "$BROKER_DIR" || cleanup_failed=1
+          if [ -n "${AB_WORKDIR:-}" ] && [ -f "$AB_WORKDIR/relay.pid" ]; then
+            relay_pid=$(cat "$AB_WORKDIR/relay.pid")
+            kill "$relay_pid" 2>/dev/null || true
+            for attempt in $(seq 1 10); do kill -0 "$relay_pid" 2>/dev/null || break; sleep 1; done
+            if kill -0 "$relay_pid" 2>/dev/null; then echo 'CLEANUP_ERROR=relay still active'; cleanup_failed=1; fi
           fi
-          test "$cleanup_failed" -eq 0
-          echo 'CLEANUP=PASS; no project containers; no dumps or credentials uploaded'
+          if docker network inspect "$AB_NETWORK" >/dev/null 2>&1; then
+            docker network rm "$AB_NETWORK" || { echo 'CLEANUP_ERROR=network removal'; cleanup_failed=1; }
+          fi
+          remaining=$(docker ps -aq --filter "label=com.supabase.cli.project=$AB_PROJECT" 2>/dev/null) || { echo 'CLEANUP_ERROR=container inventory'; cleanup_failed=1; remaining=UNKNOWN; }
+          if [ "$remaining" = UNKNOWN ] || [ -n "$remaining" ]; then echo 'CLEANUP_ERROR=containers remain or inventory unknown'; cleanup_failed=1; fi
+          if [ -n "${BROKER_DIR:-}" ] && [ "$BROKER_DIR" = "$RUNNER_TEMP/f01-broker-$GITHUB_RUN_ID" ]; then
+            if [ -f "$BROKER_DIR/broker.pid" ]; then
+              broker_pid=$(cat "$BROKER_DIR/broker.pid")
+              kill "$broker_pid" 2>/dev/null || true
+              for attempt in $(seq 1 10); do kill -0 "$broker_pid" 2>/dev/null || break; sleep 1; done
+              if kill -0 "$broker_pid" 2>/dev/null; then echo 'CLEANUP_ERROR=broker still active'; cleanup_failed=1; fi
+            fi
+            rm -rf -- "$BROKER_DIR" || { echo 'CLEANUP_ERROR=broker dir'; cleanup_failed=1; }
+            if [ -e "$BROKER_DIR" ]; then echo 'CLEANUP_ERROR=broker dir remains'; cleanup_failed=1; fi
+          fi
+          if [ -n "${AB_WORKDIR:-}" ] && [ "$AB_WORKDIR" = "$RUNNER_TEMP/02a5-buyer-$GITHUB_RUN_ID" ]; then
+            rm -rf -- "$AB_WORKDIR" || { echo 'CLEANUP_ERROR=workdir removal'; cleanup_failed=1; }
+            if [ -e "$AB_WORKDIR" ]; then echo 'CLEANUP_ERROR=workdir remains'; cleanup_failed=1; fi
+          fi
+          if [ "$cleanup_failed" -ne 0 ]; then echo 'CLEANUP=FAIL'; exit 1; fi
+          echo 'CLEANUP=PASS; project containers, network, broker, relay and private workdir removed'
